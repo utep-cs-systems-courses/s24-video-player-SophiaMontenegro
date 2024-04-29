@@ -4,7 +4,7 @@ import threading
 import cv2
 import numpy as np
 import base64
-import queue
+import blockingQueue #imports the file
 
 def extractFrames(fileName, outputBuffer, maxFramesToLoad=9999):
     # Initialize frame count 
@@ -31,6 +31,7 @@ def extractFrames(fileName, outputBuffer, maxFramesToLoad=9999):
         print(f'Reading frame {count} {success}')
         count += 1
 
+    outputBuffer.put("DONE") # let it know that its DONE
     print('Frame extraction complete')
 
 
@@ -39,9 +40,11 @@ def displayFrames(inputBuffer):
     count = 0
 
     # go through each frame in the buffer until the buffer is empty
-    while not inputBuffer.empty():
+    frame = inputBuffer.get()
+    
+    while frame is not None and frame != "DONE":
         # get the next frame
-        frame = inputBuffer.get()
+        #frame = inputBuffer.get()
 
         print(f'Displaying frame {count}')        
 
@@ -53,20 +56,56 @@ def displayFrames(inputBuffer):
 
         count += 1
 
+        # get the next frame
+        frame = inputBuffer.get()
+
     print('Finished displaying all frames')
     # cleanup the windows
     cv2.destroyAllWindows()
 
 
+def convertGrayscale(inputBuffer, outputBuffer):
+    # Initialize frame count
+    count = 0
+
+    # get frame
+    frame = inputBuffer.get()
+
+    while frame is not None and frame != "DONE" and count < 72:
+
+        # convert the image to grayscale
+        grayscaleFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # generate output file
+        outputBuffer.put(grayscaleFrame)
+
+        count += 1
+
+        # generate input for the next frame
+        frame = inputBuffer.get()
+        
+    outputBuffer.put("DONE") # finished
+    
+# -----------------------------------------------------------------------------
+
 # filename of clip to load
 filename = 'clip.mp4'
 
-# shared queue  
-extractionQueue = queue.Queue()
+# extract the frames  
+extractionQueue = blockingQueue.blockingQueue(10)
 
-# extract the frames
-extractFrames(filename,extractionQueue, 72)
+extractionThread = threading.Thread(target = lambda: extractFrames(filename,extractionQueue, 72))
+
+# convert to grayscale
+grayscaleQueue = blockingQueue.blockingQueue(10)
+
+grayscaleThread = threading.Thread(target = lambda: convertGrayscale(extractionQueue,grayscaleQueue))
 
 # display the frames
-displayFrames(extractionQueue)
+displayThread = threading.Thread(target = lambda: displayFrames(grayscaleQueue))
+
+# start all the threads
+extractionThread.start()
+grayscaleThread.start()
+displayThread.start()
 
